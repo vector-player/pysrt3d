@@ -182,7 +182,7 @@ def save_outputs(
             vis_file = vis_dir / f"frame_{idx:04d}.png"
             cv2.imwrite(str(vis_file), cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
     
-    print(f"\n✓ All outputs saved to: {output_dir}")
+    print(f"\n[OK] All outputs saved to: {output_dir}")
     print(f"  - Poses (text): {poses_txt_file}")
     print(f"  - Poses (numpy): {poses_npy_file} (shape: {poses_array.shape})")
     print(f"  - Poses OpenGL (numpy): {poses_gl_npy_file}")
@@ -331,11 +331,11 @@ Output directory (default: ./user/output):
     # Validate inputs
     print("\nValidating inputs...")
     model_path, meta_path, k_path, pose_path, images_dir = validate_inputs(input_dir)
-    print(f"✓ Model: {model_path}")
-    print(f"✓ Meta: {meta_path}")
-    print(f"✓ Camera intrinsics: {k_path}")
-    print(f"✓ Initial pose: {pose_path}")
-    print(f"✓ Images: {images_dir}")
+    print(f"[OK] Model: {model_path}")
+    print(f"[OK] Meta: {meta_path}")
+    print(f"[OK] Camera intrinsics: {k_path}")
+    print(f"[OK] Initial pose: {pose_path}")
+    print(f"[OK] Images: {images_dir}")
     
     # Load data
     print("\nLoading data...")
@@ -353,8 +353,8 @@ Output directory (default: ./user/output):
         print(f"Error: No images found in {images_dir}")
         sys.exit(1)
     
-    print(f"✓ Found {len(images)} images")
-    print(f"✓ Image size: {w}x{h}")
+    print(f"[OK] Found {len(images)} images")
+    print(f"[OK] Image size: {w}x{h}")
     
     # Get model name
     model_name = args.model_name if args.model_name else model_path.stem
@@ -475,7 +475,7 @@ Output directory (default: ./user/output):
         # Save only poses and metadata, no visualizations
         save_outputs(output_dir, poses_output, [], model_name)
     
-    print("\n✓ Tracking complete!")
+    print("\n[OK] Tracking complete!")
 
 
 if __name__ == "__main__":

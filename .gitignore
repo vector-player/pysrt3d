@@ -13,3 +13,5 @@ build
 *.ckpt
 
 *.meta
+user/input/*.*
+user/output/*.*

@@ -48,9 +48,12 @@ input_dir/
 ### File Format Details
 
 #### `model.obj`
-- 3D model file in Wavefront OBJ format
+- 3D model file in **Wavefront OBJ format** (`.obj` files only)
+- **Important:** Only OBJ format is supported. Other formats (GLB, GLTF, PLY, STL, FBX) are not supported
 - Can be named anything (e.g., `Cat.obj`, `object.obj`)
 - The script will auto-detect any `.obj` file in the input directory
+- The mesh must be triangulated (triangular faces only)
+- See `MODEL_FORMAT_SUPPORT.md` for details on format limitations and conversion options
 
 #### `model.meta`
 - Metadata file for the 3D model
