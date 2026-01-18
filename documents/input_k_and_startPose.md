@@ -60,23 +60,104 @@ This suggests the camera has approximately square pixels (fx ≈ fy) and the pri
 
 #### Method 1: Camera Calibration (Recommended)
 
-Use OpenCV's camera calibration tools:
+**Important:** This method is a **separate calibration step** that you perform **before** using pysrt3d. It is done independently of the tracking process.
+
+**Why this works:**
+- pysrt3d **needs** K-matrix as an **input** to do projections (3D → 2D)
+- Camera calibration **finds** K-matrix by analyzing known 3D→2D correspondences
+- These are **two separate steps**: calibration happens first, then tracking uses the result
+
+**The Process:**
+1. **Calibration Phase** (separate from pysrt3d):
+   - Use a calibration pattern (checkerboard) with known 3D positions
+   - Capture images of the pattern from different angles
+   - Detect 2D positions of pattern points in images
+   - Solve for K-matrix using these correspondences
+   - Save K-matrix to `K.txt`
+
+2. **Tracking Phase** (using pysrt3d):
+   - Load the pre-computed K-matrix from `K.txt`
+   - Use it as input to `pysrt3d.Tracker()`
+   - pysrt3d uses K-matrix to project 3D model points to 2D
+
+**Implementation:**
 
 ```python
 import cv2
 import numpy as np
 
-# Prepare calibration images (checkerboard pattern)
-# ... capture multiple images of checkerboard ...
+# ============================================
+# STEP 1: CALIBRATION (Done separately, before pysrt3d)
+# ============================================
 
-# Calibrate camera
+# Prepare calibration images (checkerboard pattern)
+# You need: known 3D points + their 2D projections in images
+checkerboard_size = (9, 6)  # Inner corners
+square_size = 0.025  # 25mm squares
+
+# Generate 3D object points (known positions in pattern coordinates)
+object_points = []
+for i in range(checkerboard_size[1]):
+    for j in range(checkerboard_size[0]):
+        object_points.append([j * square_size, i * square_size, 0])
+object_points = np.array(object_points, dtype=np.float32)
+
+# Capture multiple images of checkerboard from different angles
+all_object_points = []  # Known 3D points (repeated for each image)
+all_image_points = []   # Detected 2D points in each image
+
+for img_path in calibration_images:
+    img = cv2.imread(img_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Find corners in image (2D projection of known 3D points)
+    ret, corners = cv2.findChessboardCorners(gray, checkerboard_size, None)
+    
+    if ret:
+        # Refine corner positions
+        corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), 
+                                    (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
+        
+        all_object_points.append(object_points)  # Known 3D
+        all_image_points.append(corners)          # Observed 2D
+
+# Calibrate camera (solves for K-matrix)
 ret, K, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
-    object_points, image_points, image_size, None, None
+    all_object_points,  # Known 3D points
+    all_image_points,   # Observed 2D points (projection results)
+    gray.shape[::-1],   # Image size
+    None, None
 )
 
-# Save K matrix
+# Save K matrix for later use with pysrt3d
 np.savetxt('K.txt', K, fmt='%.6f')
+
+# ============================================
+# STEP 2: TRACKING (Using pysrt3d with pre-computed K)
+# ============================================
+
+# Now load the K-matrix and use it with pysrt3d
+K = np.loadtxt('K.txt', dtype=np.float32)
+
+tracker = pysrt3d.Tracker(
+    imwidth=640,
+    imheight=480,
+    K=K  # Use the pre-computed K-matrix
+)
 ```
+
+**Key Points:**
+- ✅ **Feasible**: Method 1 is a standard and recommended approach
+- ✅ **Separate process**: Calibration is done **before** using pysrt3d
+- ✅ **One-time setup**: Calibrate once, use K-matrix for all tracking sessions
+- ⚠️ **Requires calibration target**: Need physical checkerboard pattern
+- ⚠️ **Requires known correspondences**: Need 3D pattern points + their 2D image locations
+
+**When to use:**
+- You have access to the camera before tracking
+- You can capture calibration images
+- You want high accuracy
+- Camera parameters don't change (fixed camera setup)
 
 #### Method 2: Camera Specifications
 

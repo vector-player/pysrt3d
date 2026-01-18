@@ -48,9 +48,9 @@ The 3D pose is **projected onto 2D images** using the camera projection model. H
 
 ### Step-by-Step Process
 
-#### 1. **3D Model → 3D Camera Coordinates**
+#### 1. **3D Model (Object Space) → 3D Camera Coordinates (Camera Space)**
 
-The pose matrix transforms 3D points from the object's coordinate system to the camera's coordinate system:
+The pose matrix transforms 3D points from the **object's coordinate system** (object space) to the **camera's coordinate system** (camera space):
 
 ```python
 # For a 3D point P_object in object coordinates:
@@ -61,10 +61,20 @@ P_camera = R @ P_object + t  # Rotation + Translation
 ```
 
 Where:
-- `P_object = [x_obj, y_obj, z_obj, 1]` (homogeneous coordinates)
-- `R` = 3×3 rotation matrix from pose
-- `t` = [tx, ty, tz] translation from pose
-- `P_camera = [X, Y, Z]` = 3D position in camera frame
+- `P_object = [x_obj, y_obj, z_obj, 1]` (homogeneous coordinates in **object space**)
+  - These coordinates are relative to the object's origin
+  - Units are defined by `unit_in_meter` (e.g., millimeters if `unit_in_meter=0.001`)
+- `R` = 3×3 rotation matrix from pose (object orientation in camera frame)
+- `t` = [tx, ty, tz] translation from pose (object position in camera frame, in meters)
+- `P_camera = [X, Y, Z]` = 3D position in **camera space** (always in meters)
+  - These coordinates are relative to the camera center
+  - X = right, Y = down, Z = forward (OpenCV convention)
+
+**Key Transformation:**
+- **Input**: Point in object space (e.g., `(100, 50, 25)` in model units)
+- **Output**: Same point in camera space (e.g., `(0.282, -0.167, 0.732)` in meters)
+- **What changes**: The coordinate system and units (object → camera, model units → meters)
+- **What stays the same**: The physical point in 3D space
 
 #### 2. **3D Camera Coordinates → 2D Image Coordinates**
 
@@ -111,25 +121,177 @@ This is exactly what `model.pose_uv` returns - the 2D projection of the object's
 
 ## Coordinate Systems
 
-### 1. **Object/Model Space**
-- Origin: Object's local coordinate system
-- Units: Defined by `unit_in_meter` (e.g., 0.001 for millimeters)
-- The 3D model (.obj file) is defined in this space
+### 1. **Object/Model Space** (3D Model Coordinates)
 
-### 2. **World/Camera Space** (OpenCV Convention)
-- Origin: Camera center
-- X-axis: Right
-- Y-axis: Down
-- Z-axis: Forward (into the scene)
-- Units: Meters
-- The pose matrix transforms from object space to this space
+**Definition:** The coordinate system where the 3D model (.obj file) is defined. This is the object's **local coordinate system**.
 
-### 3. **Image Space**
-- Origin: Top-left corner of image
-- X-axis (u): Right (columns)
-- Y-axis (v): Down (rows)
-- Units: Pixels
+**Characteristics:**
+- **Origin**: Object's local reference point (often the object's center or a specific vertex)
+- **Units**: Defined by `unit_in_meter` parameter (e.g., 0.001 for millimeters, 1.0 for meters)
+- **Orientation**: Fixed relative to the object (e.g., front/back, up/down as defined in the model)
+- **Purpose**: Describes the object's geometry independently of its position in the scene
+- **Static**: Never changes - the model geometry is fixed
+
+**Example:**
+- A vertex at `(100, 50, 25)` in model coordinates means:
+  - 100 units along the object's X-axis
+  - 50 units along the object's Y-axis
+  - 25 units along the object's Z-axis
+- If `unit_in_meter = 0.001`, this represents `(0.1, 0.05, 0.025)` meters in the object's local frame
+
+**Key Point:** Model coordinates are **relative to the object itself**, not the camera or world.
+
+### 2. **Camera Space** (3D Camera Coordinates)
+
+**Definition:** The coordinate system centered at the camera, used to describe where points are **relative to the camera**.
+
+**Characteristics:**
+- **Origin**: Camera center (optical center)
+- **Units**: Always **meters** (regardless of model units)
+- **Orientation** (OpenCV Convention):
+  - **X-axis**: Right (positive X = to the right of camera)
+  - **Y-axis**: Down (positive Y = below camera)
+  - **Z-axis**: Forward (positive Z = into the scene, away from camera)
+- **Purpose**: Describes the object's position and orientation relative to the camera
+- **Dynamic**: Changes as the object moves relative to the camera
+
+**Example:**
+- A point at `(0.282, -0.167, 0.732)` in camera coordinates means:
+  - 0.282 meters to the **right** of the camera
+  - 0.167 meters **above** the camera (negative Y = up in OpenCV)
+  - 0.732 meters **in front** of the camera (depth)
+
+**Key Point:** Camera coordinates are **relative to the camera**, describing where the object is in the scene.
+
+### 3. **Image Space** (2D Image Coordinates)
+
+- **Origin**: Top-left corner of image
+- **X-axis (u)**: Right (columns)
+- **Y-axis (v)**: Down (rows)
+- **Units**: Pixels
+- **Purpose**: 2D pixel locations in the image
 - The camera intrinsics K project from camera space to this space
+
+---
+
+## Understanding Object Space vs Camera Space
+
+### Key Differences
+
+| Aspect | Object Space (Model Coordinates) | Camera Space (Camera Coordinates) |
+|--------|----------------------------------|----------------------------------|
+| **Reference Frame** | Object's local coordinate system | Camera's coordinate system |
+| **Origin** | Object's center/reference point | Camera center |
+| **Units** | Defined by `unit_in_meter` | Always meters |
+| **Orientation** | Fixed relative to object | Fixed relative to camera |
+| **Changes With** | Never changes (model is static) | Changes as object moves relative to camera |
+| **Purpose** | Define object geometry | Define object position in scene |
+| **Example Point** | `(100, 50, 25)` in model units | `(0.282, -0.167, 0.732)` in meters |
+
+### Why Both Are Needed
+
+1. **Object Space** is needed because:
+   - The 3D model (.obj file) is defined in its own coordinate system
+   - Model geometry is static and doesn't change
+   - Allows us to describe the object independently of where it is in the scene
+
+2. **Camera Space** is needed because:
+   - The camera sees the world from its own perspective
+   - To project to 2D, we need to know where points are relative to the camera
+   - The pose matrix tells us where the object is relative to the camera
+
+3. **The Pose Matrix** bridges them:
+   - Transforms points from object space to camera space
+   - Encodes both position (translation) and orientation (rotation)
+   - Enables projection to 2D image coordinates
+
+### Transformation Example
+
+```python
+import numpy as np
+
+# 1. A point in the 3D model (object space)
+# This is a vertex from your .obj file
+point_model = np.array([100, 50, 25, 1])  # In model units (e.g., mm)
+# This point is 100 units along object's X, 50 along Y, 25 along Z
+
+# 2. Load the pose matrix (object-to-camera transformation)
+pose = np.loadtxt('pose.txt')  # 4×4 matrix
+
+# 3. Transform to camera coordinates
+point_camera = pose @ point_model  # Now in camera space (meters)
+
+# Extract 3D position in camera frame
+X, Y, Z = point_camera[:3]  # In meters, relative to camera
+
+print(f"Model coordinates: {point_model[:3]} (object space)")
+print(f"  → This point is relative to the object's origin")
+print(f"Camera coordinates: ({X:.3f}, {Y:.3f}, {Z:.3f}) meters (camera space)")
+print(f"  → This point is relative to the camera center")
+print(f"  → X={X:.3f}m right, Y={Y:.3f}m down, Z={Z:.3f}m forward")
+
+# 4. Now we can project to 2D using camera intrinsics K
+K = np.loadtxt('K.txt')
+u = (K[0,0] * X + K[0,2] * Z) / Z
+v = (K[1,1] * Y + K[1,2] * Z) / Z
+print(f"Image coordinates: ({u:.1f}, {v:.1f}) pixels")
+```
+
+### Visual Comparison
+
+```
+OBJECT SPACE (Model Coordinates):
+    ┌─────────────────────┐
+    │     3D Model        │
+    │   (Object Space)    │
+    │                     │
+    │  Origin (0,0,0)     │ ← Object's local origin
+    │      │              │
+    │      │ Point A:     │
+    │      │ (100,50,25)  │ ← Relative to object origin
+    │      │              │
+    └─────────────────────┘
+           │
+           │ [Pose Matrix: R, t]
+           │ Transforms object → camera
+           ↓
+CAMERA SPACE (Camera Coordinates):
+    ┌─────────────────────┐
+    │      Camera        │
+    │   (Camera Space)   │
+    │                    │
+    │  Origin (0,0,0)    │ ← Camera center
+    │      │             │
+    │      │ Point A:    │
+    │      │ (0.282, -0.167, 0.732) │ ← Relative to camera
+    │      │             │
+    └────────────────────┘
+           │
+           │ [Camera Intrinsics K]
+           │ Projects 3D → 2D
+           ↓
+IMAGE SPACE (2D Pixels):
+    ┌─────────────────────┐
+    │      Image         │
+    │   (Image Space)    │
+    │                    │
+    │  Origin (0,0)      │ ← Top-left corner
+    │      │             │
+    │      │ Point A:    │
+    │      │ (514, 150)  │ ← Pixel coordinates
+    │      │             │
+    └────────────────────┘
+```
+
+### Important Notes
+
+1. **Model coordinates are fixed**: The same point in the model always has the same coordinates in object space, regardless of where the object is in the scene.
+
+2. **Camera coordinates change**: As the object moves, the same model point will have different camera coordinates because the camera's perspective changes.
+
+3. **The pose matrix encodes the relationship**: It tells us where the object is and how it's oriented relative to the camera at any given moment.
+
+4. **Units matter**: Model coordinates use `unit_in_meter` (e.g., 0.001 for mm), while camera coordinates are always in meters. The pose matrix handles this conversion.
 
 ---
 
@@ -236,9 +398,19 @@ pose = np.loadtxt('pose.txt')  # 4×4 matrix
 R = pose[:3, :3]  # 3×3 rotation matrix
 t = pose[:3, 3]   # 3×1 translation vector [tx, ty, tz]
 
-# Example: Transform a 3D point from object to camera space
-point_object = np.array([0, 0, 0, 1])  # Object origin
-point_camera = pose @ point_object  # = [tx, ty, tz, 1]
+# Example 1: Transform the object origin from object to camera space
+point_object = np.array([0, 0, 0, 1])  # Object origin in object space
+point_camera = pose @ point_object  # = [tx, ty, tz, 1] in camera space
+# The object origin in camera space is exactly the translation vector!
+
+# Example 2: Transform an arbitrary model point
+# Suppose we have a vertex at (100, 50, 25) in model coordinates
+# (assuming unit_in_meter = 0.001, so this is 0.1m, 0.05m, 0.025m)
+point_model = np.array([100, 50, 25, 1])  # In object space
+point_camera = pose @ point_model  # Now in camera space (meters)
+X, Y, Z = point_camera[:3]
+print(f"Model point (100, 50, 25) in object space")
+print(f"  → Camera space: ({X:.3f}, {Y:.3f}, {Z:.3f}) meters")
 
 # Project to 2D image coordinates
 X, Y, Z = point_camera[:3]
